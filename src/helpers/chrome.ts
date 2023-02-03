@@ -16,7 +16,6 @@ export class ChromeInstance {
     public constructor(config?: IChromeInstanceConfig) {
         // Set config defaults, then override with any provided values
         this._config = buildConfigWithDefaults(config, {
-            userDataDir: './userDataDir',
             debug: process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test'
         });
     }
