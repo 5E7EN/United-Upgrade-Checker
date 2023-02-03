@@ -1,0 +1,39 @@
+{
+    "name": "united-upgrade-checker",
+    "version": "1.0.0",
+    "description": "Automatically checks for United flight upgrade availability.",
+    "main": "index.js",
+    "repository": "https://github.com/5E7EN/United-Upgrade-Checker",
+    "author": "Simon <33012273+5E7EN@users.noreply.github.com>",
+    "license": "GPL-3.0-or-later",
+    "private": true,
+    "scripts": {
+        "start": "yarn clean && yarn build && cross-env NODE_ENV=production node ./build",
+        "dev": "cross-env NODE_ENV=development tsnd ./src",
+        "build": "tsc -p .",
+        "clean": "rimraf build/"
+    },
+    "dependencies": {
+        "dotenv": "^16.0.3",
+        "puppeteer": "^14.4.1",
+        "puppeteer-extra": "^3.3.4",
+        "puppeteer-extra-plugin-stealth": "^2.11.1",
+        "winston": "^3.8.2"
+    },
+    "devDependencies": {
+        "@types/node": "^18.0.0",
+        "@typescript-eslint/eslint-plugin": "^5.29.0",
+        "@typescript-eslint/parser": "^5.29.0",
+        "cross-env": "^7.0.3",
+        "eslint": "^8.18.0",
+        "eslint-config-prettier": "^8.5.0",
+        "eslint-plugin-eslint-comments": "^3.2.0",
+        "eslint-plugin-import": "^2.26.0",
+        "eslint-plugin-optimize-regex": "^1.2.1",
+        "eslint-plugin-prettier": "^4.0.0",
+        "prettier": "^2.7.1",
+        "rimraf": "^3.0.2",
+        "ts-node-dev": "^2.0.0",
+        "typescript": "^4.7.4"
+    }
+}
