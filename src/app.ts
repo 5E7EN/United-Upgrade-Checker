@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { createCursor, getRandomPagePoint, installMouseHelper } from 'ghost-cursor';
+import chalk from 'chalk';
 import fs from 'fs';
 
 import { WinstonLogger, buildConfigWithDefaults } from './utils';
@@ -11,15 +12,16 @@ import type { IFlightResponse, IFlight } from './types/flights';
 dotenv.config();
 
 interface IAppConfig {
-    debug: boolean;
+    debug?: boolean;
+    savedFlightsFile?: string;
 }
 
 export class App {
-    private _chromeInstance: ChromeInstance;
+    private readonly _chromeInstance: ChromeInstance;
     private readonly _config: IAppConfig;
     private readonly _logger: BaseLogger;
-    private _flights: IFlight[] = [];
-    private readonly flightNumber: string = '999';
+    private readonly upgradableClasses = [/PZ([1-9])/, /PN([1-9])/, /RN([1-9])/];
+    private flightNumber: string = '999';
 
     constructor(config?: IAppConfig) {
         // Set config defaults, then override with any provided values
@@ -37,19 +39,20 @@ export class App {
         this._logger = new WinstonLogger('Main').logger;
     }
 
-    public async checkDate(origin: string, destination: string, date: string) {
+    public async getFlights(origin: string, destination: string, date: string): Promise<IFlight[]> {
+        const flights: IFlight[] = [];
+
         // Open Chrome
-        this._logger.info('Launching Chrome...');
+        this._logger.debug('Launching chrome...');
         await this._chromeInstance.launch();
 
         // Launch page
+        this._logger.debug('Opening page...');
         const page = await this._chromeInstance.instance.newPage();
         const cursor = createCursor(page, await getRandomPagePoint(page), true);
         await installMouseHelper(page);
-        // // Wait
-        // await page.waitForTimeout(500);
 
-        // Register listener
+        // Register listener to parse flights API response
         page.on('response', async (response) => {
             if (
                 response
@@ -59,31 +62,30 @@ export class App {
                     ) &&
                 response.status() === 200
             ) {
-                // TODO: Set typings
+                // Parse response
                 const data = (await response.json()) as IFlightResponse;
 
-                // Check for errors
+                // Check for API-native errors
                 if (data.status !== 'success') {
                     this._logger.error(`Encountered errors: ${data.errors.join(', ')}`);
                 }
 
+                // Store remote flights
                 const remoteFlights = data.data.Trips[0]?.Flights;
 
-                // Check for no flights
+                // Ensure we got some flight results, and store them
                 if (!remoteFlights || !Array.isArray(remoteFlights)) {
-                    this._logger.error('No flights found!');
+                    this._logger.warn('No flights found in batch');
+                } else {
+                    flights.push(...remoteFlights);
                 }
 
-                // Store received flights
-                for (const flight of remoteFlights) {
-                    this._flights.push(flight);
-                }
-
-                this._logger.debug('Stored flights batch');
+                this._logger.debug('Batch acquired');
             }
         });
 
         // Navigate to page
+        this._logger.debug('Navigating...');
         await page.goto('https://www.united.com/ual/en/us/flight-search/book-a-flight', {
             waitUntil: 'networkidle0'
         });
@@ -100,28 +102,33 @@ export class App {
         });
         await cursor.click(oneWayNonStopElement);
 
-        // // Click 1 stop
-        // const oneWayOneStopElement = await page.evaluateHandle(() => {
-        //     return document.querySelector('#Trips_0__OneStop');
-        // });
-        // await cursor.click(oneWayOneStopElement);
+        // Click 1 stop
+        const oneWayOneStopElement = await page.evaluateHandle(() => {
+            return document.querySelector('#Trips_0__OneStop');
+        });
+        await cursor.click(oneWayOneStopElement);
+
+        // Click 2+ stops
+        const oneWayTwoStopElement = await page.evaluateHandle(() => {
+            return document.querySelector('#Trips_0__TwoPlusStop');
+        });
+        await cursor.click(oneWayTwoStopElement);
 
         // Wait
         await page.waitForTimeout(500);
 
         // Type itinerary after clicking each input 3 times to select all and overwrite any existing values
         await cursor.click('#Trips_0__Origin');
-        await page.type('#Trips_0__Origin', origin, { delay: 600 });
+        await page.type('#Trips_0__Origin', origin, { delay: 500 });
 
         await cursor.click('#Trips_0__Destination');
         await page.type('#Trips_0__Destination', destination, { delay: 500 });
 
         await cursor.click('#Trips_0__DepartDate');
-        await page.type('#Trips_0__DepartDate', date, {
-            delay: 500
-        });
+        await page.type('#Trips_0__DepartDate', date, { delay: 500 });
 
         // Scroll to upgrade search filter dropdown
+        // TODO: Remove because unnecessary?
         await page.evaluate(() => {
             const dropdown = document.querySelector('#select-upgrade-type');
             dropdown.scrollIntoView({ behavior: 'smooth' });
@@ -135,7 +142,7 @@ export class App {
         await page.focus('#ClassofService');
 
         // Wait
-        await page.waitForTimeout(1100);
+        await page.waitForTimeout(1000);
 
         // Search
         const searchElement = await page.evaluateHandle(() => {
@@ -144,86 +151,91 @@ export class App {
         await cursor.click(searchElement);
 
         // Wait for all results to load
-        await page.waitForTimeout(10_000);
+        await page.waitForNavigation();
+        await page.waitForNetworkIdle({ idleTime: 3000 });
 
         // Close page
-        //await page.close();
+        this._logger.debug('Closing page...');
+        await page.close();
+
+        // Close Chrome
+        this._logger.debug('Closing chrome...');
+        await this._chromeInstance.dispose();
+
+        // Keep local record of retrieved flights
+        this._logger.info(`[Main] Saving all flights to file...`);
+        const currentDateMs = Date.now();
+        fs.writeFileSync(`temp/flights-${currentDateMs}.json`, JSON.stringify(flights));
+        this._logger.debug(`[Main] Flights saved in temp/flights-${currentDateMs}.json`);
+
+        return flights;
     }
 
     public async start() {
-        type TUpgradableFlight = {
-            [fareClass in 'PZ' | 'PN' | 'RN']: IFlight[];
-        };
+        const allFlights: IFlight[] = [];
 
-        const upgradableFlights: TUpgradableFlight = {
-            PZ: [],
-            PN: [],
-            RN: []
-        };
-
-        // Fetch flights
-        //await this.checkDate('EWR', 'TLV', '02/07/2023');
-
-        // DEBUG
-        this._flights = JSON.parse(fs.readFileSync('temp/flights-1675587451919.json', 'utf8'));
-
-        this._logger.info(`Total flights found: ${this._flights.length}`);
-
-        // DEBUG
-        // this._logger.info(`[Main] Saving all flights to file...`);
-        // const currentDateMs = Date.now();
-        // fs.writeFileSync(`temp/flights-${currentDateMs}.json`, JSON.stringify(this._flights));
-        // this._logger.debug(`[Main] Flights saved in temp/flights-${currentDateMs}.json`);
-
-        // Close Chrome
-        //this._logger.info('Closing Chrome...');
-        //await this._chromeInstance.dispose();
-
-        // Scan for upgradability
-        this._logger.info('Scanning for upgrades...');
-        for (const flight of this._flights) {
-            // Check fare classes
-            flight.BookingClassAvailList.forEach((fareClassQuantity) => {
-                // Fare class code but without available quantity (e.g. PZ)
-                const fareClass = fareClassQuantity.slice(0, -1);
-                const upgradeClasses = [/PZ[1-9]/, /PN[1-9]/, /RN[1-9]/];
-
-                for (const fcType of upgradeClasses) {
-                    if (fareClassQuantity.match(fcType)?.[0]) {
-                        upgradableFlights[fareClass].push(flight);
-                    }
-                }
-            });
-        }
-
-        // Print results
-        for (const classCode in upgradableFlights) {
-            if (upgradableFlights[classCode].length > 0) {
-                const flights: IFlight[] = upgradableFlights[classCode];
-                this._logger.info(
-                    `Found ${flights.length} total upgrade options for ${classCode}:`
+        // If file is provided, retrieve already queried flights from disk
+        if (this._config.savedFlightsFile) {
+            // Ensure local file exists, then read it
+            if (fs.existsSync(this._config.savedFlightsFile)) {
+                this._logger.debug(
+                    `Reading local flights file ${this._config.savedFlightsFile}...`
                 );
 
-                for (const flight of upgradableFlights[classCode]) {
-                    if (this.flightNumber && flight.FlightNumber !== this.flightNumber) continue;
+                const contents = fs.readFileSync(this._config.savedFlightsFile, 'utf8');
+                const parsed = JSON.parse(contents) as IFlight[];
+                allFlights.push(...parsed);
+            } else {
+                this._logger.error(
+                    `Local flights file does not exist -> ${this._config.savedFlightsFile}`
+                );
+            }
+        } else {
+            // Query / fetch for all available flights
+            // TODO: Un-hardcode itinerary details
+            const remoteFlights = await this.getFlights('EWR', 'TLV', '02/07/2023');
+            allFlights.push(...remoteFlights);
+        }
 
+        // Ensure flight has been found
+        if (allFlights.length === 0) {
+            return this._logger.error('No flights found');
+        }
+
+        this._logger.debug(`Total flights found: ${allFlights.length}`);
+
+        // Get target flight
+        const targetFlight = allFlights.find((flight) => flight.FlightNumber === this.flightNumber);
+
+        // Ensure flight has been found
+        if (!targetFlight) {
+            return this._logger.error('Unable to locate desired flight');
+        }
+
+        // Scan for upgradability
+        this._logger.debug('Scanning for upgradability...');
+
+        // Iterate available fair classes and determine availability
+        for (const fareClassQuantity of targetFlight.BookingClassAvailList) {
+            // Parse fare class code excluding quantity (e.g. PZ, not PZ4)
+            const fareClass = fareClassQuantity.slice(0, -1);
+
+            // Iterate fair class regexes and check for matches
+            // TODO: Move away from regex-based determination
+            for (const classRegex of this.upgradableClasses) {
+                if (fareClassQuantity.match(classRegex)?.[0]) {
+                    const quantity = fareClassQuantity.match(classRegex)?.[1];
+
+                    console.log(chalk.green('UPGRADE AVAILABLE!'));
+                    console.log(chalk.yellow('Fare class: ' + chalk.magenta(fareClass)));
                     console.log(
-                        `Flight Number: ${flight.FlightNumber} | ${flight.Origin} -> ${
-                            flight.Destination
-                        } ${
-                            // List layover, if exists
-                            flight.Destination !== flight.LastDestination.Code
-                                ? `-> ${flight.LastDestination.Code}`
-                                : ''
-                        }`
+                        chalk.yellow(
+                            'Quantity: ' +
+                                (Number(quantity) < 3 ? chalk.red(quantity) : chalk.cyan(quantity))
+                        )
                     );
-                    console.log(`Departure: ${flight.DepartDateTime}`);
-                    console.log(`Arrival: ${flight.DestinationDateTime}`);
-                    console.log(`Fare Class: ${classCode}`);
                     console.log('---');
                 }
-            } else {
-                this._logger.info(`No upgrades found for ${classCode}.`);
             }
         }
     }
