@@ -197,7 +197,7 @@ export class App {
             allFlights.push(...remoteFlights);
         }
 
-        // Ensure flight has been found
+        // Ensure flights have been loaded
         if (allFlights.length === 0) {
             return this._logger.error('No flights found');
         }
