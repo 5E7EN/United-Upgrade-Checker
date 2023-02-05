@@ -28,7 +28,7 @@ export class ChromeInstance {
 
             const instance = await puppeteer.launch({
                 executablePath: executablePath(),
-                headless: !this._config.debug,
+                headless: false,
                 args: [
                     '--no-sandbox',
                     '--disable-gpu',

@@ -1,3 +1,4 @@
+import twilio, { Twilio } from 'twilio';
 import dotenv from 'dotenv';
 import { createCursor, getRandomPagePoint, installMouseHelper } from 'ghost-cursor';
 import chalk from 'chalk';
@@ -12,16 +13,27 @@ import type { IFlightResponse, IFlight } from './types/flights';
 dotenv.config();
 
 interface IAppConfig {
+    twilio: {
+        authID: string;
+        authToken: string;
+        fromNumber: string;
+        toNumber: string;
+        ownerNumber: string;
+    };
     debug?: boolean;
     savedFlightsFile?: string;
 }
 
 export class App {
     private readonly _chromeInstance: ChromeInstance;
+    private readonly _smsClient: Twilio;
     private readonly _config: IAppConfig;
     private readonly _logger: BaseLogger;
     private readonly upgradableClasses = [/PZ([1-9])/, /PN([1-9])/, /RN([1-9])/];
-    private flightNumber: string = '999';
+    private origin: string = 'EWR';
+    private destination: string = 'TLV';
+    private departureDate: string = '02/07/2023';
+    private flightNumber: string = '90';
     private targetClass: string = 'PZ';
 
     constructor(config?: IAppConfig) {
@@ -35,6 +47,9 @@ export class App {
             userDataDir: process.env.CHROME_USER_DATA_FOLDER,
             debug: this._config.debug
         });
+
+        // Configure SMS notifier
+        this._smsClient = twilio(this._config.twilio.authID, this._config.twilio.authToken);
 
         // Configure class-wide logger
         this._logger = new WinstonLogger('Main').logger;
@@ -165,6 +180,9 @@ export class App {
         await page.waitForNavigation();
         await page.waitForNetworkIdle({ idleTime: 3000 });
 
+        // Stop ghost cursor
+        cursor.toggleRandomMove(false);
+
         // Close page
         this._logger.debug('Closing page...');
         await page.close();
@@ -174,12 +192,56 @@ export class App {
         await this._chromeInstance.dispose();
 
         // Keep local record of retrieved flights
-        this._logger.info(`Saving all flights to file...`);
+        this._logger.debug(`Saving all flights to file...`);
         const currentDateMs = Date.now();
         fs.writeFileSync(`temp/flights-${currentDateMs}.json`, JSON.stringify(flights));
         this._logger.debug(`Flights saved in temp/flights-${currentDateMs}.json`);
 
         return flights;
+    }
+
+    public async checkUpgradability(targetFlight: IFlight) {
+        // TODO: Group away from declerative typing
+        const upgradableFlights: { fareClass: string; quantity: number }[] = [];
+
+        // Scan for upgradability
+        this._logger.info('Scanning for upgradability...');
+
+        // Iterate available fair classes and determine availability
+        for (const fareClassQuantity of targetFlight.BookingClassAvailList) {
+            // Parse fare class code excluding quantity (e.g. PZ, not PZ4)
+            const fareClass = fareClassQuantity.slice(0, -1);
+
+            // Iterate fair class regexes and check for matches
+            // TODO: Move away from regex-based determination
+            for (const classRegex of this.upgradableClasses) {
+                if (fareClassQuantity.match(classRegex)?.[0]) {
+                    const quantity = fareClassQuantity.match(classRegex)?.[1];
+
+                    upgradableFlights.push({ fareClass, quantity: Number(quantity) });
+                }
+            }
+        }
+
+        return upgradableFlights;
+    }
+
+    public async sendSms(to: string, content: string) {
+        // Send master SMS alert
+        await this._smsClient.messages.create({
+            body: content,
+            from: this._config.twilio.fromNumber,
+            to: this._config.twilio.ownerNumber
+        });
+
+        // Send main SMS
+        const message = await this._smsClient.messages.create({
+            body: content,
+            from: this._config.twilio.fromNumber,
+            to
+        });
+
+        return message;
     }
 
     public async start() {
@@ -203,14 +265,18 @@ export class App {
             }
         } else {
             // Query / fetch for all available flights
-            // TODO: Un-hardcode itinerary details
-            const remoteFlights = await this.getFlights('EWR', 'TLV', '02/07/2023');
+            const remoteFlights = await this.getFlights(
+                this.origin,
+                this.destination,
+                this.departureDate
+            );
             allFlights.push(...remoteFlights);
         }
 
         // Ensure flights have been loaded
         if (allFlights.length === 0) {
-            return this._logger.error('No flights found');
+            this._logger.warn('No flights found');
+            return { found: false };
         }
 
         this._logger.debug(`Total flights found: ${allFlights.length}`);
@@ -220,37 +286,44 @@ export class App {
 
         // Ensure flight has been found
         if (!targetFlight) {
-            return this._logger.error('Unable to locate desired flight');
+            this._logger.error('Unable to locate desired flight');
+            return { found: false };
         }
 
-        // Scan for upgradability
-        this._logger.debug('Scanning for upgradability...');
+        // Check for upgradability
+        const upgradability = await this.checkUpgradability(targetFlight);
 
-        // Iterate available fair classes and determine availability
-        for (const fareClassQuantity of targetFlight.BookingClassAvailList) {
-            // Parse fare class code excluding quantity (e.g. PZ, not PZ4)
-            const fareClass = fareClassQuantity.slice(0, -1);
+        if (
+            upgradability.length === 0 ||
+            !upgradability.some(({ fareClass }) => fareClass === this.targetClass)
+        ) {
+            this._logger.info('No upgradability found for desired fare class');
+            return { found: false };
+        }
 
+        for (const { fareClass, quantity } of upgradability) {
             // Skip if not desired target class
             if (this.targetClass && fareClass !== this.targetClass) continue;
 
-            // Iterate fair class regexes and check for matches
-            // TODO: Move away from regex-based determination
-            for (const classRegex of this.upgradableClasses) {
-                if (fareClassQuantity.match(classRegex)?.[0]) {
-                    const quantity = fareClassQuantity.match(classRegex)?.[1];
+            console.log(chalk.green('UPGRADE AVAILABLE!'));
+            console.log(chalk.yellow('Fare class: ' + chalk.magenta(fareClass)));
+            console.log(
+                chalk.yellow(
+                    'Quantity: ' +
+                        (Number(quantity) < 3 ? chalk.red(quantity) : chalk.cyan(quantity))
+                )
+            );
+            console.log('---');
 
-                    console.log(chalk.green('UPGRADE AVAILABLE!'));
-                    console.log(chalk.yellow('Fare class: ' + chalk.magenta(fareClass)));
-                    console.log(
-                        chalk.yellow(
-                            'Quantity: ' +
-                                (Number(quantity) < 3 ? chalk.red(quantity) : chalk.cyan(quantity))
-                        )
-                    );
-                    console.log('---');
-                }
-            }
+            // Send SMS notification
+            await this.sendSms(
+                this._config.twilio.toNumber,
+                `Found upgrade availability for flight UA ${targetFlight.FlightNumber} on ${this.departureDate}.\nFare class: ${fareClass}\nQuantity: ${quantity}`
+            );
+
+            return { found: true };
         }
+
+        return { found: false };
     }
 }
