@@ -22,6 +22,7 @@ export class App {
     private readonly _logger: BaseLogger;
     private readonly upgradableClasses = [/PZ([1-9])/, /PN([1-9])/, /RN([1-9])/];
     private flightNumber: string = '999';
+    private targetClass: string = 'PZ';
 
     constructor(config?: IAppConfig) {
         // Set config defaults, then override with any provided values
@@ -80,7 +81,7 @@ export class App {
                     flights.push(...remoteFlights);
                 }
 
-                this._logger.debug('Batch acquired');
+                this._logger.debug('Flight batch acquired');
             }
         });
 
@@ -91,24 +92,28 @@ export class App {
         });
 
         // Click one way
+        this._logger.debug('Clicking one way...');
         const oneWayElement = await page.evaluateHandle(() => {
             return document.querySelector('#TripTypes_ow');
         });
         await cursor.click(oneWayElement);
 
         // Click non stop
+        this._logger.debug('Clicking non stop...');
         const oneWayNonStopElement = await page.evaluateHandle(() => {
             return document.querySelector('#Trips_0__NonStop');
         });
         await cursor.click(oneWayNonStopElement);
 
         // Click 1 stop
+        this._logger.debug('Clicking 1 stop...');
         const oneWayOneStopElement = await page.evaluateHandle(() => {
             return document.querySelector('#Trips_0__OneStop');
         });
         await cursor.click(oneWayOneStopElement);
 
         // Click 2+ stops
+        this._logger.debug('Clicking 2+ stops...');
         const oneWayTwoStopElement = await page.evaluateHandle(() => {
             return document.querySelector('#Trips_0__TwoPlusStop');
         });
@@ -118,23 +123,28 @@ export class App {
         await page.waitForTimeout(500);
 
         // Type itinerary after clicking each input 3 times to select all and overwrite any existing values
+        this._logger.debug('Typing origin...');
         await cursor.click('#Trips_0__Origin');
         await page.type('#Trips_0__Origin', origin, { delay: 500 });
 
+        this._logger.debug('Typing destination...');
         await cursor.click('#Trips_0__Destination');
         await page.type('#Trips_0__Destination', destination, { delay: 500 });
 
+        this._logger.debug('Typing departure date...');
         await cursor.click('#Trips_0__DepartDate');
         await page.type('#Trips_0__DepartDate', date, { delay: 500 });
 
         // Scroll to upgrade search filter dropdown
         // TODO: Remove because unnecessary?
+        this._logger.debug('Scrolling...');
         await page.evaluate(() => {
             const dropdown = document.querySelector('#select-upgrade-type');
             dropdown.scrollIntoView({ behavior: 'smooth' });
         });
 
         // Select upgrade search
+        this._logger.debug('Selecting upgrade type...');
         await page.select('#select-upgrade-type', 'MUA');
 
         // Fix focus
@@ -145,6 +155,7 @@ export class App {
         await page.waitForTimeout(1000);
 
         // Search
+        this._logger.debug('Searching...');
         const searchElement = await page.evaluateHandle(() => {
             return document.querySelector('#btn-search');
         });
@@ -163,10 +174,10 @@ export class App {
         await this._chromeInstance.dispose();
 
         // Keep local record of retrieved flights
-        this._logger.info(`[Main] Saving all flights to file...`);
+        this._logger.info(`Saving all flights to file...`);
         const currentDateMs = Date.now();
         fs.writeFileSync(`temp/flights-${currentDateMs}.json`, JSON.stringify(flights));
-        this._logger.debug(`[Main] Flights saved in temp/flights-${currentDateMs}.json`);
+        this._logger.debug(`Flights saved in temp/flights-${currentDateMs}.json`);
 
         return flights;
     }
@@ -219,6 +230,9 @@ export class App {
         for (const fareClassQuantity of targetFlight.BookingClassAvailList) {
             // Parse fare class code excluding quantity (e.g. PZ, not PZ4)
             const fareClass = fareClassQuantity.slice(0, -1);
+
+            // Skip if not desired target class
+            if (this.targetClass && fareClass !== this.targetClass) continue;
 
             // Iterate fair class regexes and check for matches
             // TODO: Move away from regex-based determination
