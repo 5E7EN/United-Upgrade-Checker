@@ -1,4 +1,6 @@
 import dotenv from 'dotenv';
+import { createCursor, getRandomPagePoint, installMouseHelper } from 'ghost-cursor';
+import fs from 'fs';
 
 import { WinstonLogger, buildConfigWithDefaults } from './utils';
 import { ChromeInstance } from './helpers';
@@ -17,6 +19,7 @@ export class App {
     private readonly _config: IAppConfig;
     private readonly _logger: BaseLogger;
     private _flights: IFlight[] = [];
+    private readonly flightNumber: string = '999';
 
     constructor(config?: IAppConfig) {
         // Set config defaults, then override with any provided values
@@ -41,6 +44,10 @@ export class App {
 
         // Launch page
         const page = await this._chromeInstance.instance.newPage();
+        const cursor = createCursor(page, await getRandomPagePoint(page), true);
+        await installMouseHelper(page);
+        // // Wait
+        // await page.waitForTimeout(500);
 
         // Register listener
         page.on('response', async (response) => {
@@ -81,116 +88,143 @@ export class App {
             waitUntil: 'networkidle0'
         });
 
-        // Click one way stuff
-        await page.evaluate(() => {
-            const $oneWayButton = document.querySelector('#TripTypes_ow') as HTMLElement;
-            $oneWayButton.click();
-
-            const $oneWayNonStopButton = document.querySelector('#Trips_0__NonStop') as HTMLElement;
-            $oneWayNonStopButton.click();
-
-            const $oneWayOneStopButton = document.querySelector('#Trips_0__OneStop') as HTMLElement;
-            $oneWayOneStopButton.click();
-
-            // const $oneWayTwoPlusStopButton = document.querySelector(
-            //     '#Trips_0__TwoPlusStop'
-            // ) as HTMLElement;
-            // $oneWayTwoPlusStopButton.click();
+        // Click one way
+        const oneWayElement = await page.evaluateHandle(() => {
+            return document.querySelector('#TripTypes_ow');
         });
+        await cursor.click(oneWayElement);
+
+        // Click non stop
+        const oneWayNonStopElement = await page.evaluateHandle(() => {
+            return document.querySelector('#Trips_0__NonStop');
+        });
+        await cursor.click(oneWayNonStopElement);
+
+        // // Click 1 stop
+        // const oneWayOneStopElement = await page.evaluateHandle(() => {
+        //     return document.querySelector('#Trips_0__OneStop');
+        // });
+        // await cursor.click(oneWayOneStopElement);
 
         // Wait
         await page.waitForTimeout(500);
 
         // Type itinerary after clicking each input 3 times to select all and overwrite any existing values
-        await page.click('#Trips_0__Origin', { clickCount: 3 });
-        await page.type('#Trips_0__Origin', origin, { delay: 100 });
+        await cursor.click('#Trips_0__Origin');
+        await page.type('#Trips_0__Origin', origin, { delay: 600 });
 
-        await page.click('#Trips_0__Destination', { clickCount: 3 });
-        await page.type('#Trips_0__Destination', destination, { delay: 100 });
+        await cursor.click('#Trips_0__Destination');
+        await page.type('#Trips_0__Destination', destination, { delay: 500 });
 
-        await page.click('#Trips_0__DepartDate', { clickCount: 3 });
+        await cursor.click('#Trips_0__DepartDate');
         await page.type('#Trips_0__DepartDate', date, {
-            delay: 100
+            delay: 500
+        });
+
+        // Scroll to upgrade search filter dropdown
+        await page.evaluate(() => {
+            const dropdown = document.querySelector('#select-upgrade-type');
+            dropdown.scrollIntoView({ behavior: 'smooth' });
         });
 
         // Select upgrade search
         await page.select('#select-upgrade-type', 'MUA');
 
         // Fix focus
-        await page.click('#fare-preference');
+        await cursor.click('#fare-preference');
         await page.focus('#ClassofService');
 
         // Wait
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(1100);
 
         // Search
-        await page.evaluate(() => {
-            const $submitButton = document.querySelector('#btn-search') as HTMLElement;
-            $submitButton.click();
+        const searchElement = await page.evaluateHandle(() => {
+            return document.querySelector('#btn-search');
         });
+        await cursor.click(searchElement);
 
         // Wait for all results to load
         await page.waitForTimeout(10_000);
 
         // Close page
-        await page.close();
-
-        // Close Chrome
-        this._logger.info('Closing Chrome...');
-        await this._chromeInstance.dispose();
+        //await page.close();
     }
 
     public async start() {
-        interface IUpgradableFlight {
-            fareClass: string;
-            flight: IFlight;
-        }
+        type TUpgradableFlight = {
+            [fareClass in 'PZ' | 'PN' | 'RN']: IFlight[];
+        };
 
-        const upgradableFlights: IUpgradableFlight[] = [];
+        const upgradableFlights: TUpgradableFlight = {
+            PZ: [],
+            PN: [],
+            RN: []
+        };
 
         // Fetch flights
-        await this.checkDate('EWR', 'PHX', '02/04/2023');
+        //await this.checkDate('EWR', 'TLV', '02/07/2023');
+
+        // DEBUG
+        this._flights = JSON.parse(fs.readFileSync('temp/flights-1675587451919.json', 'utf8'));
+
         this._logger.info(`Total flights found: ${this._flights.length}`);
+
+        // DEBUG
+        // this._logger.info(`[Main] Saving all flights to file...`);
+        // const currentDateMs = Date.now();
+        // fs.writeFileSync(`temp/flights-${currentDateMs}.json`, JSON.stringify(this._flights));
+        // this._logger.debug(`[Main] Flights saved in temp/flights-${currentDateMs}.json`);
+
+        // Close Chrome
+        //this._logger.info('Closing Chrome...');
+        //await this._chromeInstance.dispose();
 
         // Scan for upgradability
         this._logger.info('Scanning for upgrades...');
         for (const flight of this._flights) {
             // Check fare classes
-            flight.BookingClassAvailList.forEach((fareClass) => {
-                // TODO: Refactor
-                const matchesPz = fareClass.match(/PZ[1-9]/);
-                const matchesPn = fareClass.match(/PN[1-9]/);
+            flight.BookingClassAvailList.forEach((fareClassQuantity) => {
+                // Fare class code but without available quantity (e.g. PZ)
+                const fareClass = fareClassQuantity.slice(0, -1);
+                const upgradeClasses = [/PZ[1-9]/, /PN[1-9]/, /RN[1-9]/];
 
-                if (matchesPz?.[0]) {
-                    upgradableFlights.push({ fareClass: fareClass, flight });
-                }
-
-                if (matchesPn?.[0]) {
-                    upgradableFlights.push({ fareClass: fareClass, flight });
+                for (const fcType of upgradeClasses) {
+                    if (fareClassQuantity.match(fcType)?.[0]) {
+                        upgradableFlights[fareClass].push(flight);
+                    }
                 }
             });
         }
 
         // Print results
-        if (upgradableFlights.length > 0) {
-            this._logger.info(`Found ${upgradableFlights.length} total upgrade options:`);
-
-            upgradableFlights.forEach(({ fareClass, flight }) => {
-                console.log(
-                    `Flight Number: ${flight.FlightNumber} | ${flight.Origin} -> ${
-                        flight.Destination
-                    } ${
-                        // List layover, if exists
-                        flight.Destination !== flight.LastDestination.Code
-                            ? `-> ${flight.LastDestination.Code}`
-                            : ''
-                    }`
+        for (const classCode in upgradableFlights) {
+            if (upgradableFlights[classCode].length > 0) {
+                const flights: IFlight[] = upgradableFlights[classCode];
+                this._logger.info(
+                    `Found ${flights.length} total upgrade options for ${classCode}:`
                 );
-                console.log(`Departure: ${flight.DepartDateTime}`);
-                console.log(`Arrival: ${flight.DestinationDateTime}`);
-                console.log(`Fare Class: ${fareClass}`);
-                console.log('---');
-            });
+
+                for (const flight of upgradableFlights[classCode]) {
+                    if (this.flightNumber && flight.FlightNumber !== this.flightNumber) continue;
+
+                    console.log(
+                        `Flight Number: ${flight.FlightNumber} | ${flight.Origin} -> ${
+                            flight.Destination
+                        } ${
+                            // List layover, if exists
+                            flight.Destination !== flight.LastDestination.Code
+                                ? `-> ${flight.LastDestination.Code}`
+                                : ''
+                        }`
+                    );
+                    console.log(`Departure: ${flight.DepartDateTime}`);
+                    console.log(`Arrival: ${flight.DestinationDateTime}`);
+                    console.log(`Fare Class: ${classCode}`);
+                    console.log('---');
+                }
+            } else {
+                this._logger.info(`No upgrades found for ${classCode}.`);
+            }
         }
     }
 }

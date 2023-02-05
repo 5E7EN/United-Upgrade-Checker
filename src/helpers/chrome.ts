@@ -1,3 +1,4 @@
+import { executablePath } from 'puppeteer';
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import type { Browser } from 'puppeteer';
@@ -26,6 +27,7 @@ export class ChromeInstance {
             puppeteer.use(StealthPlugin());
 
             const instance = await puppeteer.launch({
+                executablePath: executablePath(),
                 headless: !this._config.debug,
                 args: [
                     '--no-sandbox',
