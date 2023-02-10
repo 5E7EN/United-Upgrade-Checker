@@ -1,8 +1,8 @@
-import twilio, { Twilio } from 'twilio';
 import dotenv from 'dotenv';
-import { createCursor, getRandomPagePoint, installMouseHelper } from 'ghost-cursor';
 import chalk from 'chalk';
 import fs from 'fs';
+import { createCursor, getRandomPagePoint, installMouseHelper } from 'ghost-cursor';
+import twilio, { Twilio } from 'twilio';
 
 import { WinstonLogger, buildConfigWithDefaults } from './utils';
 import { ChromeInstance } from './helpers';
@@ -32,11 +32,10 @@ interface IItinerary {
     targetClass: string;
 }
 
-interface IJob {
-    username: string;
-    email: string;
+export interface IJob {
     phone: string;
     itinerary: IItinerary;
+    completed: boolean;
 }
 
 interface IJobResult {
@@ -53,7 +52,7 @@ export class App {
     private readonly _upgradableClasses = [/PZ([1-9])/, /PN([1-9])/, /RN([1-9])/];
     private jobs: IJob[] = [];
 
-    constructor(config?: IAppConfig) {
+    constructor(jobs: IJob[], config?: IAppConfig) {
         // Set config defaults, then override with any provided values
         this._config = buildConfigWithDefaults(config, {
             debug: process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test'
@@ -68,49 +67,8 @@ export class App {
         // Configure SMS notifier
         this._smsClient = twilio(this._config.twilio.authID, this._config.twilio.authToken);
 
-        // Add job
-        // TODO: Use parameters
-        // Upgradable
-        this.jobs.push({
-            username: '5E7EN',
-            email: '5e7en7@protonmail.com',
-            phone: this._config.twilio.ownerNumber, // TODO: Change from owner number
-            itinerary: {
-                origin: 'EWR',
-                destination: 'TLV',
-                departureDate: '02/13/2023',
-                flightNumber: '999',
-                targetClass: 'PZ'
-            }
-        });
-
-        // Not upgradable
-        this.jobs.push({
-            username: '5E7EN',
-            email: '5e7en7@protonmail.com',
-            phone: this._config.twilio.ownerNumber, // TODO: Change from owner number
-            itinerary: {
-                origin: 'EWR',
-                destination: 'TLV',
-                departureDate: '02/11/2023',
-                flightNumber: '84',
-                targetClass: 'PZ'
-            }
-        });
-
-        // Not upgradable
-        this.jobs.push({
-            username: '5E7EN',
-            email: '5e7en7@protonmail.com',
-            phone: this._config.twilio.ownerNumber, // TODO: Change from owner number
-            itinerary: {
-                origin: 'EWR',
-                destination: 'TLV',
-                departureDate: '02/11/2023',
-                flightNumber: '84',
-                targetClass: 'PZ'
-            }
-        });
+        // Assign jobs
+        this.jobs = [...jobs];
 
         // Configure class-wide logger
         this._logger = new WinstonLogger('Main').logger;
@@ -317,7 +275,27 @@ export class App {
             let jobError: string = null;
             jobIndex = jobIndex + 1;
 
-            this._logger.info(`Execute job #${jobIndex}...`);
+            // Skip job if completed
+            if (job.completed === true) {
+                this._logger.debug(`[Job #${jobIndex}] Already completed, skipping...`);
+                continue;
+            }
+
+            // Skip and mark job as completed if departure date has passed
+            // TODO: Move function away from here as misc utility
+            const getDatePlusOneDay = (rawDate: string) => {
+                const date = new Date(rawDate);
+                date.setDate(date.getDate() + 1);
+                return date;
+            };
+
+            if (getDatePlusOneDay(job.itinerary.departureDate) < new Date()) {
+                this._logger.info(`[Job #${jobIndex}] Date passed, marking as completed...`);
+                job.completed = true;
+                continue;
+            }
+
+            this._logger.info(`[Job #${jobIndex}] Executing...`);
 
             try {
                 // Get flights
@@ -337,7 +315,7 @@ export class App {
             // Ensure flight has been found
             if (!targetFlight || !targetFlight?.FlightNumber) {
                 this._logger.warn(
-                    `[Job #${jobIndex}] Unable to locate target flight: ${targetFlight.FlightNumber}`
+                    `[Job #${jobIndex}] Unable to locate target flight: ${job.itinerary.flightNumber}`
                 );
                 jobError = 'Unable to locate desired flight';
             } else {
@@ -346,7 +324,7 @@ export class App {
                 );
             }
 
-            // Add job meta, flight object, and possible errors to results
+            // Add job reference/pointer, flight object, and possible errors to results
             jobResults.push({
                 job,
                 flight: targetFlight,
@@ -385,16 +363,15 @@ export class App {
         } else {
             const results = await this.executeJobs(this.jobs);
             jobResults.push(...results);
-
-            // Close Chrome
-            this._logger.debug('Closing chrome...');
-            await this._chromeInstance.dispose();
         }
 
         // Ensure job results have been loaded
         if (jobResults.length === 0) {
             this._logger.warn('No job results found');
-            return { found: false };
+        } else {
+            // Close Chrome
+            this._logger.debug('Closing chrome...');
+            await this._chromeInstance.dispose();
         }
 
         // Iterate each job and check for upgrade availability
@@ -440,7 +417,28 @@ export class App {
                     jobMeta.phone,
                     `Found upgrade availability for flight UA ${flight.FlightNumber} on ${jobMeta.itinerary.departureDate}.\nFare class: ${fareClass}\nQuantity: ${quantity}`
                 );
+
+                // Mark original job as completed using `jobMeta` reference
+                jobMeta.completed = true;
             }
+        }
+
+        // Exit process if all jobs have completed
+        const allCompleted = this.jobs.every((job) => job.completed === true);
+        if (allCompleted) {
+            this._logger.info('All jobs have completed, goodbye!');
+            process.exit(0);
+        }
+
+        // List completed jobs for human reference
+        for (const job of this.jobs) {
+            if (job.completed !== true) continue;
+
+            const { origin, destination, departureDate, flightNumber } = job.itinerary;
+
+            this._logger.info(
+                `Completed job: [UA ${flightNumber}] ${origin} -> ${destination} on ${departureDate}`
+            );
         }
     }
 }

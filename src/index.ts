@@ -1,26 +1,33 @@
 import { App } from './app';
+import type { IJob } from './app';
 
-const savedJobsFile = 'temp/flights-1675593485516.json';
+const jobs: IJob[] = [
+    {
+        phone: process.env.TWILIO_TO_NUMBER,
+        itinerary: {
+            origin: 'EWR',
+            destination: 'TLV',
+            departureDate: '02/11/2023',
+            flightNumber: '999',
+            targetClass: 'PZ'
+        },
+        completed: false
+    }
+];
 
-const app = new App({
+const app = new App(jobs, {
     twilio: {
         authID: process.env.TWILIO_AUTH_ID,
         authToken: process.env.TWILIO_AUTH_TOKEN,
         fromNumber: process.env.TWILIO_FROM_NUMBER,
         toNumber: process.env.TWILIO_TO_NUMBER,
         ownerNumber: process.env.TWILIO_OWNER_NUMBER
-    }
-    //savedJobsFile
+    },
+    savedJobsFile: null
 });
 
-// TODO: Refactor
 async function check() {
-    const result = await app.start();
-
-    // if (result.found) {
-    //     console.log('Upgrade found. Exiting...');
-    //     process.exit(0);
-    // }
+    await app.start();
 }
 
 check();
