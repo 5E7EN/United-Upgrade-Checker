@@ -3,7 +3,8 @@ import chalk from 'chalk';
 import fs from 'fs';
 import twilio, { Twilio } from 'twilio';
 
-import { FlightManager } from './helpers/flight-manager';
+import { FlightManager } from './helpers';
+import { SmsProvider } from './providers';
 
 import { WinstonLogger, buildConfigWithDefaults, addDaysToDate } from './utils';
 import { ChromeInstance } from './helpers';
@@ -53,7 +54,7 @@ interface IUpgradableFlight {
 export class App {
     private readonly _chromeInstance: ChromeInstance;
     private readonly _flightManager: FlightManager;
-    private readonly _smsClient: Twilio;
+    private readonly _smsProvider: SmsProvider;
     private readonly _config: IAppConfig;
     private readonly _logger: BaseLogger;
     private readonly _upgradableClasses = [/PZ([1-9])/, /PN([1-9])/, /RN([1-9])/];
@@ -77,12 +78,14 @@ export class App {
         });
 
         // Configure SMS notifier
-        this._smsClient = twilio(this._config.twilio.authID, this._config.twilio.authToken);
+        this._smsProvider = new SmsProvider({
+            ...this._config.twilio
+        });
 
         // Assign jobs
         this.jobs = [...jobs];
 
-        // Configure class-wide logger
+        // Configure logger
         this._logger = new WinstonLogger('Main').logger;
     }
 
@@ -115,24 +118,6 @@ export class App {
         }
 
         return upgradableFlights;
-    }
-
-    public async sendSms(to: string, content: string) {
-        // Send master SMS alert
-        await this._smsClient.messages.create({
-            body: content,
-            from: this._config.twilio.fromNumber,
-            to: this._config.twilio.ownerNumber
-        });
-
-        // Send main SMS
-        const message = await this._smsClient.messages.create({
-            body: content,
-            from: this._config.twilio.fromNumber,
-            to
-        });
-
-        return message;
     }
 
     public async executeJobs(jobs: IJob[]): Promise<IJobResult[]> {
@@ -275,8 +260,7 @@ export class App {
                 console.log('---');
 
                 // Send SMS notification
-                await this.sendSms(
-                    jobMeta.phone,
+                await this._smsProvider.send(
                     `Found upgrade availability for flight UA ${flight.FlightNumber} on ${jobMeta.itinerary.departureDate}.\nFare class: ${fareClass}\nQuantity: ${quantity}`
                 );
 

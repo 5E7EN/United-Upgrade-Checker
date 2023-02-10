@@ -17,7 +17,7 @@ export class FlightManager {
         // Set config
         this._config = config;
 
-        // Configure class-wide logger
+        // Configure logger
         this._logger = new WinstonLogger('Flight Manager').logger;
     }
 
