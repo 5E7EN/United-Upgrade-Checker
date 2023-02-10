@@ -4,7 +4,7 @@ import fs from 'fs';
 import { createCursor, getRandomPagePoint, installMouseHelper } from 'ghost-cursor';
 import twilio, { Twilio } from 'twilio';
 
-import { WinstonLogger, buildConfigWithDefaults } from './utils';
+import { WinstonLogger, buildConfigWithDefaults, addDaysToDate } from './utils';
 import { ChromeInstance } from './helpers';
 import type { BaseLogger } from './utils';
 import type { IFlightResponse, IFlight } from './types/flights';
@@ -42,6 +42,11 @@ interface IJobResult {
     job: IJob;
     flight: IFlight;
     error?: string;
+}
+
+interface IUpgradableFlight {
+    fareClass: string;
+    quantity: number;
 }
 
 export class App {
@@ -223,8 +228,7 @@ export class App {
     }
 
     public async checkUpgradability(targetFlight: IFlight) {
-        // TODO: Group away from declerative typing
-        const upgradableFlights: { fareClass: string; quantity: number }[] = [];
+        const upgradableFlights: IUpgradableFlight[] = [];
 
         // Scan for upgradability
         this._logger.info('Scanning for upgradability...');
@@ -282,14 +286,7 @@ export class App {
             }
 
             // Skip and mark job as completed if departure date has passed
-            // TODO: Move function away from here as misc utility
-            const getDatePlusOneDay = (rawDate: string) => {
-                const date = new Date(rawDate);
-                date.setDate(date.getDate() + 1);
-                return date;
-            };
-
-            if (getDatePlusOneDay(job.itinerary.departureDate) < new Date()) {
+            if (addDaysToDate(job.itinerary.departureDate, 1) < new Date()) {
                 this._logger.info(`[Job #${jobIndex}] Date passed, marking as completed...`);
                 job.completed = true;
                 continue;
