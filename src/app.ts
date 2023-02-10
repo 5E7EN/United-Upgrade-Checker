@@ -183,10 +183,8 @@ export class App {
             await cursor.click(oneWayElement);
 
             // Ensure button was selected, otherwise recurse
-            const isOneWaySelected = await page.evaluateHandle(() => {
-                const oneWayRadioButton: HTMLInputElement = document.querySelector(
-                    '#TripTypes_ow'
-                ) as any;
+            const isOneWaySelected: boolean = await page.evaluate(() => {
+                const oneWayRadioButton: HTMLInputElement = document.querySelector('#TripTypes_ow');
                 return oneWayRadioButton.checked;
             });
 
