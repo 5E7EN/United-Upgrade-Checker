@@ -15,14 +15,26 @@ import type { IFlight } from './types/flights';
 dotenv.config();
 
 interface IAppConfig {
-    twilio: {
+    /**
+     * Optional configuration for SMS provider (Twilio).
+     * Default uses environmental variables as defined in .env file.
+     */
+    twilio?: {
         authID: string;
         authToken: string;
         fromNumber: string;
         toNumber: string;
         ownerNumber: string;
     };
+    /**
+     * Debug level to be applied to all application modules.
+     * @default process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test'
+     */
     debug?: boolean;
+    /**
+     * Path to file containing previously executed jobs in JSON format.
+     * If specified, the jobs will be replayed and re-evaluated to find upgrades.
+     */
     savedJobsFile?: string;
 }
 

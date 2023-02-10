@@ -1,6 +1,6 @@
 import twilio, { Twilio } from 'twilio';
 
-import { WinstonLogger } from '../utils';
+import { WinstonLogger, buildConfigWithDefaults } from '../utils';
 import type { BaseLogger } from '../utils';
 
 interface ISmsProviderConfig {
@@ -16,9 +16,15 @@ export class SmsProvider {
     private readonly _client: Twilio;
     private readonly _logger: BaseLogger;
 
-    constructor(config: ISmsProviderConfig) {
+    constructor(config?: ISmsProviderConfig) {
         // Set config
-        this._config = config;
+        this._config = buildConfigWithDefaults(config, {
+            authID: process.env.TWILIO_AUTH_ID,
+            authToken: process.env.TWILIO_AUTH_TOKEN,
+            fromNumber: process.env.TWILIO_FROM_NUMBER,
+            toNumber: process.env.TWILIO_TO_NUMBER,
+            ownerNumber: process.env.TWILIO_OWNER_NUMBER
+        });
 
         // Configure SMS client
         this._client = twilio(this._config.authID, this._config.authToken);
