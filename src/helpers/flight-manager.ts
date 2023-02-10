@@ -3,7 +3,7 @@ import { createCursor, getRandomPagePoint, installMouseHelper } from 'ghost-curs
 import { WinstonLogger } from '../utils';
 import type { BaseLogger } from '../utils';
 import type { ChromeInstance } from '../helpers';
-import type { IFlightResponse, IFlight } from '../types/flights';
+import type { IFlightResponse, IFlight } from '../types';
 
 interface IFlightManagerConfig {
     chrome: ChromeInstance;

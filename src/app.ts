@@ -1,15 +1,13 @@
 import dotenv from 'dotenv';
 import chalk from 'chalk';
 import fs from 'fs';
-import twilio, { Twilio } from 'twilio';
 
-import { FlightManager } from './helpers';
+import { FlightManager, JobManager, ChromeInstance } from './helpers';
 import { SmsProvider } from './providers';
 
-import { WinstonLogger, buildConfigWithDefaults, addDaysToDate } from './utils';
-import { ChromeInstance } from './helpers';
+import { WinstonLogger, buildConfigWithDefaults } from './utils';
 import type { BaseLogger } from './utils';
-import type { IFlight } from './types/flights';
+import type { IFlight, IJob, IJobResult } from './types';
 
 // Configure environmental variables
 dotenv.config();
@@ -38,26 +36,6 @@ interface IAppConfig {
     savedJobsFile?: string;
 }
 
-interface IItinerary {
-    origin: string;
-    destination: string;
-    departureDate: string;
-    flightNumber: string;
-    targetClass: string;
-}
-
-export interface IJob {
-    phone: string;
-    itinerary: IItinerary;
-    completed: boolean;
-}
-
-interface IJobResult {
-    job: IJob;
-    flight: IFlight;
-    error?: string;
-}
-
 interface IUpgradableFlight {
     fareClass: string;
     quantity: number;
@@ -66,6 +44,7 @@ interface IUpgradableFlight {
 export class App {
     private readonly _chromeInstance: ChromeInstance;
     private readonly _flightManager: FlightManager;
+    private readonly _jobManager: JobManager;
     private readonly _smsProvider: SmsProvider;
     private readonly _config: IAppConfig;
     private readonly _logger: BaseLogger;
@@ -87,6 +66,11 @@ export class App {
         // Create flight manager instance
         this._flightManager = new FlightManager({
             chrome: this._chromeInstance
+        });
+
+        // Create flight manager instance
+        this._jobManager = new JobManager({
+            flightManager: this._flightManager
         });
 
         // Configure SMS notifier
@@ -126,77 +110,6 @@ export class App {
         return upgradableFlights;
     }
 
-    public async executeJobs(jobs: IJob[]): Promise<IJobResult[]> {
-        const jobResults: IJobResult[] = [];
-
-        // Iterate all jobs and retrieve flights
-        for (let [jobIndex, job] of jobs.entries()) {
-            let targetFlight: IFlight;
-            let jobError: string = null;
-            jobIndex = jobIndex + 1;
-
-            // Skip job if completed
-            if (job.completed === true) {
-                this._logger.debug(`[Job #${jobIndex}] Already completed, skipping...`);
-                continue;
-            }
-
-            // Skip and mark job as completed if departure date has passed
-            if (addDaysToDate(job.itinerary.departureDate, 1) < new Date()) {
-                this._logger.info(`[Job #${jobIndex}] Date passed, marking as completed...`);
-                job.completed = true;
-                continue;
-            }
-
-            this._logger.info(`[Job #${jobIndex}] Executing...`);
-
-            try {
-                // Get flights
-                const flights = await this._flightManager.getFlights(
-                    job.itinerary.origin,
-                    job.itinerary.destination,
-                    job.itinerary.departureDate
-                );
-                this._logger.debug(`[Job #${jobIndex}] Total flights found: ${flights.length}`);
-
-                // Single out target flight via flight number
-                targetFlight = this._flightManager.getSpecificFlight(
-                    job.itinerary.flightNumber,
-                    flights
-                );
-            } catch (error) {
-                jobError = error.message || error;
-            }
-
-            // Ensure flight has been found
-            if (!targetFlight || !targetFlight?.FlightNumber) {
-                this._logger.warn(
-                    `[Job #${jobIndex}] Unable to locate target flight: ${job.itinerary.flightNumber}`
-                );
-                jobError = 'Unable to locate desired flight';
-            } else {
-                this._logger.debug(
-                    `[Job #${jobIndex}] Located target flight: UA ${targetFlight.FlightNumber}`
-                );
-            }
-
-            // Add job reference/pointer, flight object, and possible errors to results
-            jobResults.push({
-                job,
-                flight: targetFlight,
-                error: jobError
-            });
-        }
-
-        // Keep local record of completed jobs
-        this._logger.debug(`Saving all job results to file...`);
-        const currentDateMs = Date.now();
-        fs.writeFileSync(`temp/jobs-${currentDateMs}.json`, JSON.stringify(jobResults));
-        this._logger.debug(`Flights saved in temp/jobs-${currentDateMs}.json`);
-
-        return jobResults;
-    }
-
     public async start() {
         const jobResults: IJobResult[] = [];
 
@@ -217,7 +130,7 @@ export class App {
                 );
             }
         } else {
-            const results = await this.executeJobs(this.jobs);
+            const results = await this._jobManager.executeJobs(this.jobs);
             jobResults.push(...results);
         }
 

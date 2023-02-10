@@ -1,5 +1,5 @@
 import { App } from './app';
-import type { IJob } from './app';
+import type { IJob } from './types';
 
 const jobs: IJob[] = [
     {
