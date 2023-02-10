@@ -162,4 +162,10 @@ export class FlightManager {
 
         return flights;
     }
+
+    public getSpecificFlight(flightNumber: string, flights: IFlight[]): IFlight {
+        const targetFlight = flights.find((flight) => flight.FlightNumber === flightNumber);
+
+        return targetFlight;
+    }
 }

@@ -89,12 +89,6 @@ export class App {
         this._logger = new WinstonLogger('Main').logger;
     }
 
-    public getSpecificFlight(flightNumber: string, flights: IFlight[]): IFlight {
-        const targetFlight = flights.find((flight) => flight.FlightNumber === flightNumber);
-
-        return targetFlight;
-    }
-
     public async checkUpgradability(targetFlight: IFlight) {
         const upgradableFlights: IUpgradableFlight[] = [];
 
@@ -154,7 +148,10 @@ export class App {
                 this._logger.debug(`[Job #${jobIndex}] Total flights found: ${flights.length}`);
 
                 // Single out target flight via flight number
-                targetFlight = this.getSpecificFlight(job.itinerary.flightNumber, flights);
+                targetFlight = this._flightManager.getSpecificFlight(
+                    job.itinerary.flightNumber,
+                    flights
+                );
             } catch (error) {
                 jobError = error.message || error;
             }
