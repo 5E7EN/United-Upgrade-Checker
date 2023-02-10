@@ -21,7 +21,28 @@ interface IAppConfig {
         ownerNumber: string;
     };
     debug?: boolean;
-    savedFlightsFile?: string;
+    savedJobsFile?: string;
+}
+
+interface IItinerary {
+    origin: string;
+    destination: string;
+    departureDate: string;
+    flightNumber: string;
+    targetClass: string;
+}
+
+interface IJob {
+    username: string;
+    email: string;
+    phone: string;
+    itinerary: IItinerary;
+}
+
+interface IJobResult {
+    job: IJob;
+    flight: IFlight;
+    error?: string;
 }
 
 export class App {
@@ -29,12 +50,8 @@ export class App {
     private readonly _smsClient: Twilio;
     private readonly _config: IAppConfig;
     private readonly _logger: BaseLogger;
-    private readonly upgradableClasses = [/PZ([1-9])/, /PN([1-9])/, /RN([1-9])/];
-    private origin: string = 'EWR';
-    private destination: string = 'TLV';
-    private departureDate: string = '02/07/2023';
-    private flightNumber: string = '90';
-    private targetClass: string = 'PZ';
+    private readonly _upgradableClasses = [/PZ([1-9])/, /PN([1-9])/, /RN([1-9])/];
+    private jobs: IJob[] = [];
 
     constructor(config?: IAppConfig) {
         // Set config defaults, then override with any provided values
@@ -50,6 +67,50 @@ export class App {
 
         // Configure SMS notifier
         this._smsClient = twilio(this._config.twilio.authID, this._config.twilio.authToken);
+
+        // Add job
+        // TODO: Use parameters
+        // Upgradable
+        this.jobs.push({
+            username: '5E7EN',
+            email: '5e7en7@protonmail.com',
+            phone: this._config.twilio.ownerNumber, // TODO: Change from owner number
+            itinerary: {
+                origin: 'EWR',
+                destination: 'TLV',
+                departureDate: '02/13/2023',
+                flightNumber: '999',
+                targetClass: 'PZ'
+            }
+        });
+
+        // Not upgradable
+        this.jobs.push({
+            username: '5E7EN',
+            email: '5e7en7@protonmail.com',
+            phone: this._config.twilio.ownerNumber, // TODO: Change from owner number
+            itinerary: {
+                origin: 'EWR',
+                destination: 'TLV',
+                departureDate: '02/11/2023',
+                flightNumber: '84',
+                targetClass: 'PZ'
+            }
+        });
+
+        // Not upgradable
+        this.jobs.push({
+            username: '5E7EN',
+            email: '5e7en7@protonmail.com',
+            phone: this._config.twilio.ownerNumber, // TODO: Change from owner number
+            itinerary: {
+                origin: 'EWR',
+                destination: 'TLV',
+                departureDate: '02/11/2023',
+                flightNumber: '84',
+                targetClass: 'PZ'
+            }
+        });
 
         // Configure class-wide logger
         this._logger = new WinstonLogger('Main').logger;
@@ -100,45 +161,48 @@ export class App {
             }
         });
 
+        // Clear browser cookies
+        const client = await page.target().createCDPSession();
+        await client.send('Network.clearBrowserCookies');
+        await client.detach();
+
         // Navigate to page
         this._logger.debug('Navigating...');
         await page.goto('https://www.united.com/ual/en/us/flight-search/book-a-flight', {
             waitUntil: 'networkidle0'
         });
 
-        // Click one way
-        this._logger.debug('Clicking one way...');
-        const oneWayElement = await page.evaluateHandle(() => {
-            return document.querySelector('#TripTypes_ow');
-        });
-        await cursor.click(oneWayElement);
+        // Click one way, and keep trying if cursor missed the button
+        const clickOneWay = async () => {
+            // Click one way
+            this._logger.debug('Clicking one way...');
+            const oneWayElement = await page.evaluateHandle(() => {
+                return document.querySelector('#TripTypes_ow');
+            });
+            // @ts-ignore
+            await cursor.click(oneWayElement);
 
-        // Click non stop
-        this._logger.debug('Clicking non stop...');
-        const oneWayNonStopElement = await page.evaluateHandle(() => {
-            return document.querySelector('#Trips_0__NonStop');
-        });
-        await cursor.click(oneWayNonStopElement);
+            // Ensure button was selected, otherwise recurse
+            const isOneWaySelected = await page.evaluateHandle(() => {
+                const oneWayRadioButton: HTMLInputElement = document.querySelector(
+                    '#TripTypes_ow'
+                ) as any;
+                return oneWayRadioButton.checked;
+            });
 
-        // Click 1 stop
-        this._logger.debug('Clicking 1 stop...');
-        const oneWayOneStopElement = await page.evaluateHandle(() => {
-            return document.querySelector('#Trips_0__OneStop');
-        });
-        await cursor.click(oneWayOneStopElement);
-
-        // Click 2+ stops
-        this._logger.debug('Clicking 2+ stops...');
-        const oneWayTwoStopElement = await page.evaluateHandle(() => {
-            return document.querySelector('#Trips_0__TwoPlusStop');
-        });
-        await cursor.click(oneWayTwoStopElement);
+            if (!isOneWaySelected) {
+                this._logger.debug('Missed button, retrying...');
+                await clickOneWay();
+            }
+        };
+        await clickOneWay();
 
         // Wait
         await page.waitForTimeout(500);
 
         // Type itinerary after clicking each input 3 times to select all and overwrite any existing values
         this._logger.debug('Typing origin...');
+
         await cursor.click('#Trips_0__Origin');
         await page.type('#Trips_0__Origin', origin, { delay: 500 });
 
@@ -155,7 +219,11 @@ export class App {
         this._logger.debug('Scrolling...');
         await page.evaluate(() => {
             const dropdown = document.querySelector('#select-upgrade-type');
-            dropdown.scrollIntoView({ behavior: 'smooth' });
+            dropdown.scrollIntoView({
+                behavior: 'smooth',
+                block: 'end',
+                inline: 'end'
+            });
         });
 
         // Select upgrade search
@@ -174,6 +242,7 @@ export class App {
         const searchElement = await page.evaluateHandle(() => {
             return document.querySelector('#btn-search');
         });
+        // @ts-ignore
         await cursor.click(searchElement);
 
         // Wait for all results to load
@@ -182,22 +251,19 @@ export class App {
 
         // Stop ghost cursor
         cursor.toggleRandomMove(false);
+        await page.waitForTimeout(2000);
 
         // Close page
         this._logger.debug('Closing page...');
         await page.close();
 
-        // Close Chrome
-        this._logger.debug('Closing chrome...');
-        await this._chromeInstance.dispose();
-
-        // Keep local record of retrieved flights
-        this._logger.debug(`Saving all flights to file...`);
-        const currentDateMs = Date.now();
-        fs.writeFileSync(`temp/flights-${currentDateMs}.json`, JSON.stringify(flights));
-        this._logger.debug(`Flights saved in temp/flights-${currentDateMs}.json`);
-
         return flights;
+    }
+
+    public getSpecificFlight(flightNumber: string, flights: IFlight[]): IFlight {
+        const targetFlight = flights.find((flight) => flight.FlightNumber === flightNumber);
+
+        return targetFlight;
     }
 
     public async checkUpgradability(targetFlight: IFlight) {
@@ -214,7 +280,7 @@ export class App {
 
             // Iterate fair class regexes and check for matches
             // TODO: Move away from regex-based determination
-            for (const classRegex of this.upgradableClasses) {
+            for (const classRegex of this._upgradableClasses) {
                 if (fareClassQuantity.match(classRegex)?.[0]) {
                     const quantity = fareClassQuantity.match(classRegex)?.[1];
 
@@ -244,86 +310,139 @@ export class App {
         return message;
     }
 
-    public async start() {
-        const allFlights: IFlight[] = [];
+    public async executeJobs(jobs: IJob[]): Promise<IJobResult[]> {
+        const jobResults: IJobResult[] = [];
 
-        // If file is provided, retrieve already queried flights from disk
-        if (this._config.savedFlightsFile) {
-            // Ensure local file exists, then read it
-            if (fs.existsSync(this._config.savedFlightsFile)) {
+        // Iterate all jobs and retrieve flights
+        for (let [jobIndex, job] of jobs.entries()) {
+            let targetFlight: IFlight;
+            let jobError: string = null;
+            jobIndex = jobIndex + 1;
+
+            this._logger.info(`Execute job #${jobIndex}...`);
+
+            try {
+                // Get flights
+                const flights = await this.getFlights(
+                    job.itinerary.origin,
+                    job.itinerary.destination,
+                    job.itinerary.departureDate
+                );
+                this._logger.debug(`[Job #${jobIndex}] Total flights found: ${flights.length}`);
+
+                // Single out target flight via flight number
+                targetFlight = this.getSpecificFlight(job.itinerary.flightNumber, flights);
+            } catch (error) {
+                jobError = error.message || error;
+            }
+
+            // Ensure flight has been found
+            if (!targetFlight || !targetFlight?.FlightNumber) {
+                this._logger.warn(
+                    `[Job #${jobIndex}] Unable to locate target flight: ${targetFlight.FlightNumber}`
+                );
+                jobError = 'Unable to locate desired flight';
+            } else {
                 this._logger.debug(
-                    `Reading local flights file ${this._config.savedFlightsFile}...`
+                    `[Job #${jobIndex}] Located target flight: UA ${targetFlight.FlightNumber}`
+                );
+            }
+
+            // Add job meta, flight object, and possible errors to results
+            jobResults.push({
+                job,
+                flight: targetFlight,
+                error: jobError
+            });
+        }
+
+        // Keep local record of completed jobs
+        this._logger.debug(`Saving all job results to file...`);
+        const currentDateMs = Date.now();
+        fs.writeFileSync(`temp/jobs-${currentDateMs}.json`, JSON.stringify(jobResults));
+        this._logger.debug(`Flights saved in temp/jobs-${currentDateMs}.json`);
+
+        return jobResults;
+    }
+
+    public async start() {
+        const jobResults: IJobResult[] = [];
+
+        // If file is provided, retrieve already fetched jobs from disk
+        if (this._config.savedJobsFile) {
+            // Ensure local file exists, then read it
+            if (fs.existsSync(this._config.savedJobsFile)) {
+                this._logger.debug(
+                    `Reading local job results file ${this._config.savedJobsFile}...`
                 );
 
-                const contents = fs.readFileSync(this._config.savedFlightsFile, 'utf8');
-                const parsed = JSON.parse(contents) as IFlight[];
-                allFlights.push(...parsed);
+                const contents = fs.readFileSync(this._config.savedJobsFile, 'utf8');
+                const parsed = JSON.parse(contents) as IJobResult[];
+                jobResults.push(...parsed);
             } else {
                 this._logger.error(
-                    `Local flights file does not exist -> ${this._config.savedFlightsFile}`
+                    `Local job results file does not exist -> ${this._config.savedJobsFile}`
                 );
             }
         } else {
-            // Query / fetch for all available flights
-            const remoteFlights = await this.getFlights(
-                this.origin,
-                this.destination,
-                this.departureDate
-            );
-            allFlights.push(...remoteFlights);
+            const results = await this.executeJobs(this.jobs);
+            jobResults.push(...results);
+
+            // Close Chrome
+            this._logger.debug('Closing chrome...');
+            await this._chromeInstance.dispose();
         }
 
-        // Ensure flights have been loaded
-        if (allFlights.length === 0) {
-            this._logger.warn('No flights found');
+        // Ensure job results have been loaded
+        if (jobResults.length === 0) {
+            this._logger.warn('No job results found');
             return { found: false };
         }
 
-        this._logger.debug(`Total flights found: ${allFlights.length}`);
+        // Iterate each job and check for upgrade availability
+        for (const { job: jobMeta, flight, error } of jobResults) {
+            if (error) {
+                this._logger.error(`Encountered error while retrieving flights: ${error}`);
+                this._logger.error('Skipping...');
+                continue;
+            }
 
-        // Get target flight
-        const targetFlight = allFlights.find((flight) => flight.FlightNumber === this.flightNumber);
+            // Check for upgradability
+            const upgradability = await this.checkUpgradability(flight);
 
-        // Ensure flight has been found
-        if (!targetFlight) {
-            this._logger.error('Unable to locate desired flight');
-            return { found: false };
+            // Ensure upgradability result includes target fare class
+            if (
+                upgradability.length === 0 ||
+                !upgradability.some(({ fareClass }) => fareClass === jobMeta.itinerary.targetClass)
+            ) {
+                this._logger.info('No upgradability found for desired fare class');
+                continue;
+            }
+
+            // Iterate upgrade opportunities and send notification
+            for (const { fareClass, quantity } of upgradability) {
+                // Skip if not desired target class
+                if (jobMeta.itinerary.targetClass && fareClass !== jobMeta.itinerary.targetClass) {
+                    continue;
+                }
+
+                // Log success to console
+                console.log(chalk.green('UPGRADE AVAILABLE!'));
+                console.log(chalk.yellow('Fare class: ' + chalk.magenta(fareClass)));
+                console.log(
+                    chalk.yellow(
+                        'Quantity: ' +
+                            (Number(quantity) < 3 ? chalk.red(quantity) : chalk.cyan(quantity))
+                    )
+                );
+                console.log('---');
+
+                // Send SMS notification
+                await this.sendSms(
+                    jobMeta.phone,
+                    `Found upgrade availability for flight UA ${flight.FlightNumber} on ${jobMeta.itinerary.departureDate}.\nFare class: ${fareClass}\nQuantity: ${quantity}`
+                );
+            }
         }
-
-        // Check for upgradability
-        const upgradability = await this.checkUpgradability(targetFlight);
-
-        if (
-            upgradability.length === 0 ||
-            !upgradability.some(({ fareClass }) => fareClass === this.targetClass)
-        ) {
-            this._logger.info('No upgradability found for desired fare class');
-            return { found: false };
-        }
-
-        for (const { fareClass, quantity } of upgradability) {
-            // Skip if not desired target class
-            if (this.targetClass && fareClass !== this.targetClass) continue;
-
-            console.log(chalk.green('UPGRADE AVAILABLE!'));
-            console.log(chalk.yellow('Fare class: ' + chalk.magenta(fareClass)));
-            console.log(
-                chalk.yellow(
-                    'Quantity: ' +
-                        (Number(quantity) < 3 ? chalk.red(quantity) : chalk.cyan(quantity))
-                )
-            );
-            console.log('---');
-
-            // Send SMS notification
-            await this.sendSms(
-                this._config.twilio.toNumber,
-                `Found upgrade availability for flight UA ${targetFlight.FlightNumber} on ${this.departureDate}.\nFare class: ${fareClass}\nQuantity: ${quantity}`
-            );
-
-            return { found: true };
-        }
-
-        return { found: false };
     }
 }
