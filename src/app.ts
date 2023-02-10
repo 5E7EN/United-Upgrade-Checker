@@ -21,7 +21,6 @@ interface IAppConfig {
         authID: string;
         authToken: string;
         fromNumber: string;
-        toNumber: string;
         ownerNumber: string;
     };
     /**

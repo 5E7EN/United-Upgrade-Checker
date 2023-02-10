@@ -20,7 +20,6 @@ const app = new App(jobs, {
         authID: process.env.TWILIO_AUTH_ID,
         authToken: process.env.TWILIO_AUTH_TOKEN,
         fromNumber: process.env.TWILIO_FROM_NUMBER,
-        toNumber: process.env.TWILIO_TO_NUMBER,
         ownerNumber: process.env.TWILIO_OWNER_NUMBER
     },
     savedJobsFile: null
