@@ -7,7 +7,6 @@ interface ISmsProviderConfig {
     authID: string;
     authToken: string;
     fromNumber: string;
-    toNumber: string;
     ownerNumber?: string;
 }
 
@@ -22,7 +21,6 @@ export class SmsProvider {
             authID: process.env.TWILIO_AUTH_ID,
             authToken: process.env.TWILIO_AUTH_TOKEN,
             fromNumber: process.env.TWILIO_FROM_NUMBER,
-            toNumber: process.env.TWILIO_TO_NUMBER,
             ownerNumber: process.env.TWILIO_OWNER_NUMBER
         });
 
@@ -33,7 +31,7 @@ export class SmsProvider {
         this._logger = new WinstonLogger('SMS Provider').logger;
     }
 
-    public async send(content: string) {
+    public async send(to: string, content: string) {
         // Send owner SMS alert, if phone number provided
         if (this._config.ownerNumber) {
             this._logger.debug(`Sending owner alert -> ${this._config.ownerNumber}`);
@@ -46,11 +44,11 @@ export class SmsProvider {
         }
 
         // Send main SMS
-        this._logger.debug(`Sending main alert -> ${this._config.toNumber}`);
+        this._logger.debug(`Sending main alert -> ${to}`);
         const message = await this._client.messages.create({
             body: content,
             from: this._config.fromNumber,
-            to: this._config.toNumber
+            to
         });
 
         return message;

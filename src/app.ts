@@ -42,11 +42,11 @@ interface IUpgradableFlight {
 }
 
 export class App {
+    private readonly _config: IAppConfig;
     private readonly _chromeInstance: ChromeInstance;
     private readonly _flightManager: FlightManager;
     private readonly _jobManager: JobManager;
     private readonly _smsProvider: SmsProvider;
-    private readonly _config: IAppConfig;
     private readonly _logger: BaseLogger;
     private readonly _upgradableClasses = [/PZ([1-9])/, /PN([1-9])/, /RN([1-9])/];
     private jobs: IJob[] = [];
@@ -183,6 +183,7 @@ export class App {
 
                 // Send SMS notification
                 await this._smsProvider.send(
+                    jobMeta.phone,
                     `Found upgrade availability for flight UA ${flight.FlightNumber} on ${jobMeta.itinerary.departureDate}.\nFare class: ${fareClass}\nQuantity: ${quantity}`
                 );
 
