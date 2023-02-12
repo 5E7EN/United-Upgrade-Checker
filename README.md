@@ -2,15 +2,6 @@
 
 Automatically checks for United flight upgrade availability.
 
-## Prerequisites:
-
-To enable SMS notifications you must create a Twilio (trial) account.  
-Once ready, proceed below:
-
--   Set `disableSms: true` in index.ts
--   Copy `.env.example` into `.env` and populate all Twilio-related values
--   All instances of phone numbers found in `.env` should include the country code (e.g. `+18008008000`)
-
 ## Usage:
 
 See `index.ts` for example usage.
@@ -22,6 +13,15 @@ See `index.ts` for example usage.
 
 -   Supports multiple itineraries (just add multiple jobs to `jobs` array)
 -   Supports SMS notifications
+
+### SMS Notifications:
+
+To enable SMS notifications you must create a Twilio (trial) account.  
+Once ready, proceed below:
+
+-   Set `disableSms: true` in index.ts
+-   Copy `.env.example` into `.env` and populate all Twilio-related values
+-   All instances of phone numbers found in `.env` should include the country code (e.g. `+18008008000`)
 
 ## Disclaimer
 
