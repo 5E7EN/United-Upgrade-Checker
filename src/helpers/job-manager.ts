@@ -1,6 +1,6 @@
 import fs from 'fs';
 
-import { WinstonLogger, addDaysToDate } from '../utils';
+import { WinstonLogger } from '../utils';
 import type { BaseLogger } from '../utils';
 import type { FlightManager } from './flight-manager';
 import type { ChromeInstance } from './chrome';
