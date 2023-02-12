@@ -28,6 +28,7 @@ export class ChromeInstance {
 
             const instance = await puppeteer.launch({
                 executablePath: executablePath(),
+                // Headless browser will trigger bot detection
                 headless: false,
                 args: [
                     '--no-sandbox',
