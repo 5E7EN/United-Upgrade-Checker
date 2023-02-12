@@ -3,7 +3,7 @@ import { createCursor, getRandomPagePoint, installMouseHelper } from 'ghost-curs
 import { WinstonLogger } from '../utils';
 import type { BaseLogger } from '../utils';
 import type { ChromeInstance } from '../helpers';
-import type { IFlightResponse, IFlight } from '../types';
+import type { IFlightResponse, IFlight, IFlightsResult } from '../types';
 
 interface IFlightManagerConfig {
     chrome: ChromeInstance;
@@ -21,8 +21,13 @@ export class FlightManager {
         this._logger = new WinstonLogger('Flight Manager').logger;
     }
 
-    public async getFlights(origin: string, destination: string, date: string): Promise<IFlight[]> {
+    public async getFlights(
+        origin: string,
+        destination: string,
+        date: string
+    ): Promise<IFlightsResult> {
         const flights: IFlight[] = [];
+        let flightError: string = null;
 
         // Open Chrome
         this._logger.debug('Launching chrome...');
@@ -49,20 +54,21 @@ export class FlightManager {
 
                 // Check for API-native errors
                 if (data.status !== 'success') {
-                    this._logger.error(`Encountered errors: ${data.errors.join(', ')}`);
+                    const [errorText, errorCode] = data.errors;
+                    //this._logger.error(`Encountered errors: ${errorText} [${errorCode}]`);
+                    flightError = errorText;
                 }
 
                 // Store remote flights
-                const remoteFlights = data.data.Trips[0]?.Flights;
+                const remoteFlights = data.data.Trips?.[0]?.Flights;
 
-                // Ensure we got some flight results, and store them
+                // Ensure we got some flight results, then store them
                 if (!remoteFlights || !Array.isArray(remoteFlights)) {
                     this._logger.warn('No flights found in batch');
                 } else {
+                    this._logger.debug('Flight batch acquired');
                     flights.push(...remoteFlights);
                 }
-
-                this._logger.debug('Flight batch acquired');
             }
         });
 
@@ -160,7 +166,7 @@ export class FlightManager {
         this._logger.debug('Closing page...');
         await page.close();
 
-        return flights;
+        return { flights, error: flightError };
     }
 
     public getSpecificFlight(flightNumber: string, flights: IFlight[]): IFlight {

@@ -36,22 +36,20 @@ export class JobManager {
                 continue;
             }
 
-            // Skip and mark job as completed if departure date has passed
-            if (addDaysToDate(job.itinerary.departureDate, 1) < new Date()) {
-                this._logger.info(`[Job #${jobIndex}] Date passed, marking as completed...`);
-                job.completed = true;
-                continue;
-            }
-
             this._logger.info(`[Job #${jobIndex}] Executing...`);
 
             try {
                 // Get flights
-                const flights = await this._config.flightManager.getFlights(
-                    job.itinerary.origin,
-                    job.itinerary.destination,
-                    job.itinerary.departureDate
-                );
+                const { flights, error: flightsFetchError } =
+                    await this._config.flightManager.getFlights(
+                        job.itinerary.origin,
+                        job.itinerary.destination,
+                        job.itinerary.departureDate
+                    );
+
+                // Throw new error (we don't care about retaining the stack since there's no initial Error object, just error text)
+                if (flightsFetchError) throw new Error(flightsFetchError);
+
                 this._logger.debug(`[Job #${jobIndex}] Total flights found: ${flights.length}`);
 
                 // Single out target flight via flight number
@@ -65,10 +63,14 @@ export class JobManager {
 
             // Ensure flight has been found
             if (!targetFlight || !targetFlight?.FlightNumber) {
-                this._logger.warn(
-                    `[Job #${jobIndex}] Unable to locate target flight: ${job.itinerary.flightNumber}`
-                );
-                jobError = 'Unable to locate desired flight';
+                // Assign generic error if we don't already have one stored
+                if (!jobError) {
+                    this._logger.warn(
+                        `[Job #${jobIndex}] Unable to locate target flight: ${job.itinerary.flightNumber}`
+                    );
+
+                    jobError = 'Unable to locate desired flight';
+                }
             } else {
                 this._logger.debug(
                     `[Job #${jobIndex}] Located target flight: UA ${targetFlight.FlightNumber}`

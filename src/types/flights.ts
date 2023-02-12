@@ -1,7 +1,12 @@
+export interface IFlightsResult {
+    flights: IFlight[];
+    error?: string;
+}
+
 export interface IFlightResponse {
     status: string;
     data: Data;
-    errors: [] | null;
+    errors: string[] | null;
 }
 
 export interface Data {

@@ -143,10 +143,24 @@ export class App {
         }
 
         // Iterate each job and check for upgrade availability
-        for (const { job: jobMeta, flight, error } of jobResults) {
+        for (const jobResult of jobResults) {
+            const { job: jobMeta, flight, error } = jobResult;
+            const jobResultIndex = jobResults.indexOf(jobResult) + 1;
+
             if (error) {
-                this._logger.error(`Encountered error while retrieving flights: ${error}`);
-                this._logger.error('Skipping...');
+                // Mark job as completed if departure date has passed (accounting for timezone differences)
+                if (error.startsWith('ValidateInput: DepartDate is invalid for selected Origin')) {
+                    this._logger.info(
+                        `[Job #${jobResultIndex}] Departure date passed in origin ${jobMeta.itinerary.origin}, marking as completed...`
+                    );
+                    jobMeta.completed = true;
+                    continue;
+                }
+
+                this._logger.error(
+                    `[Job #${jobResultIndex}] Encountered error while retrieving flights: ${error}`
+                );
+                this._logger.error(`[Job #${jobResultIndex}] Skipping...`);
                 continue;
             }
 
@@ -158,7 +172,9 @@ export class App {
                 upgradability.length === 0 ||
                 !upgradability.some(({ fareClass }) => fareClass === jobMeta.itinerary.targetClass)
             ) {
-                this._logger.info('No upgradability found for desired fare class');
+                this._logger.info(
+                    `[Job #${jobResultIndex}] No upgradability found for desired fare class`
+                );
                 continue;
             }
 
