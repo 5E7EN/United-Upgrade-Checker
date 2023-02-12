@@ -213,7 +213,9 @@ export class App {
                 }
 
                 // Mark original job as completed using `jobMeta` reference
+                // Record time of completion
                 jobMeta.completed = true;
+                jobMeta.completedAt = new Date();
             }
         }
 
@@ -229,9 +231,11 @@ export class App {
             if (job.completed !== true) continue;
 
             const { origin, destination, departureDate, flightNumber } = job.itinerary;
+            const completionTime = job.completedAt ? `[${job.completedAt.toLocaleString()}] ` : '';
 
             this._logger.info(
-                `Completed job: [UA ${flightNumber}] ${origin} -> ${destination} on ${departureDate}`
+                completionTime +
+                    `Completed job: [UA ${flightNumber}] ${origin} -> ${destination} on ${departureDate}`
             );
         }
     }

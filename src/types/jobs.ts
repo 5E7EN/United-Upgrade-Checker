@@ -12,6 +12,7 @@ export interface IJob {
     phone?: string;
     itinerary: IItinerary;
     completed: boolean;
+    completedAt?: Date;
 }
 
 export interface IJobResult {
