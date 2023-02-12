@@ -190,7 +190,12 @@ export class App {
 
                 // Log success to console
                 console.log(chalk.green('UPGRADE AVAILABLE!'));
-                console.log(chalk.yellow('Fare class: ' + chalk.magenta(fareClass)));
+                console.log(chalk.yellow('Flight: ' + chalk.magenta('UA ' + flight.FlightNumber)));
+                console.log(
+                    chalk.yellow('Date: ' + chalk.magenta(jobMeta.itinerary.departureDate))
+                );
+
+                console.log(chalk.yellow('Fare class: ' + chalk.cyan(fareClass)));
                 console.log(
                     chalk.yellow(
                         'Quantity: ' +
