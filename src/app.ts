@@ -94,9 +94,6 @@ export class App {
     public async checkUpgradability(targetFlight: IFlight) {
         const upgradableFlights: IUpgradableFlight[] = [];
 
-        // Scan for upgradability
-        this._logger.info('Scanning for upgradability...');
-
         // Iterate available fair classes and determine availability
         for (const fareClassQuantity of targetFlight.BookingClassAvailList) {
             // Parse fare class code excluding quantity (e.g. PZ, not PZ4)
@@ -168,6 +165,7 @@ export class App {
             }
 
             // Check for upgradability
+            this._logger.info(`[Job #${jobResultIndex}] Scanning for upgradability...`);
             const upgradability = await this.checkUpgradability(flight);
 
             // Ensure upgradability result includes target fare class
