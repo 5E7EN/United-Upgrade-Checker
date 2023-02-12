@@ -22,11 +22,11 @@ const jobs: IJob[] = [
 
 // Create application instance
 const app = new App(jobs, {
-    // Set to `true` to disable SMS notifications
+    // Set to `false` to enable SMS notifications
     disableSms: true
 });
 
-// Run app every x seconds
+// Run app every x minutes, as defined by `checkInterval` above
 async function check() {
     await app.start();
 }

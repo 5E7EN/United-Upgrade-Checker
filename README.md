@@ -1,6 +1,6 @@
 # United Upgrade Checker
 
-Automatically checks for United flight upgrade availability.
+Automatically checks for United flight instant upgrade availability on set interval.
 
 ## Usage:
 
