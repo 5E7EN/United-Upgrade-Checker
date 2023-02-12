@@ -1,12 +1,14 @@
 import fs from 'fs';
 
 import { WinstonLogger, addDaysToDate } from '../utils';
-import type { FlightManager } from './flight-manager';
 import type { BaseLogger } from '../utils';
+import type { FlightManager } from './flight-manager';
+import type { ChromeInstance } from './chrome';
 import type { IFlight, IJob, IJobResult } from '../types';
 
 interface IJobManagerConfig {
     flightManager: FlightManager;
+    chrome: ChromeInstance;
 }
 
 export class JobManager {
@@ -23,6 +25,10 @@ export class JobManager {
 
     public async executeJobs(jobs: IJob[]): Promise<IJobResult[]> {
         const jobResults: IJobResult[] = [];
+
+        // Open Chrome
+        this._logger.debug('Launching chrome...');
+        await this._config.chrome.launch();
 
         // Iterate all jobs and retrieve flights
         for (let [jobIndex, job] of jobs.entries()) {
@@ -84,6 +90,10 @@ export class JobManager {
                 error: jobError
             });
         }
+
+        // Close Chrome
+        this._logger.debug('Closing chrome...');
+        await this._config.chrome.dispose();
 
         // Keep local record of completed jobs
         this._logger.debug(`Saving all job results to file...`);

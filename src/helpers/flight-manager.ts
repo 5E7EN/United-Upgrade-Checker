@@ -29,10 +29,6 @@ export class FlightManager {
         const flights: IFlight[] = [];
         let flightError: string = null;
 
-        // Open Chrome
-        this._logger.debug('Launching chrome...');
-        await this._config.chrome.launch();
-
         // Launch page
         this._logger.debug('Opening page...');
         const page = await this._config.chrome.instance.newPage();

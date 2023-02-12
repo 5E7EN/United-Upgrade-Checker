@@ -69,7 +69,8 @@ export class App {
 
         // Create flight manager instance
         this._jobManager = new JobManager({
-            flightManager: this._flightManager
+            flightManager: this._flightManager,
+            chrome: this._chromeInstance
         });
 
         // Configure SMS notifier
@@ -136,10 +137,6 @@ export class App {
         // Ensure job results have been loaded
         if (jobResults.length === 0) {
             this._logger.warn('No job results found');
-        } else {
-            // Close Chrome
-            this._logger.debug('Closing chrome...');
-            await this._chromeInstance.dispose();
         }
 
         // Iterate each job and check for upgrade availability
