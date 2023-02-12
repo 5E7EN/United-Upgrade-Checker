@@ -33,6 +33,10 @@ interface IAppConfig {
      * If specified, the jobs will be replayed and re-evaluated to find upgrades.
      */
     savedJobsFile?: string;
+    /**
+     * Disables SMS notifications if set to `true`.
+     */
+    disableSms?: boolean;
 }
 
 interface IUpgradableFlight {
@@ -73,10 +77,12 @@ export class App {
             chrome: this._chromeInstance
         });
 
-        // Configure SMS notifier
-        this._smsProvider = new SmsProvider({
-            ...this._config.twilio
-        });
+        if (!this._config.disableSms) {
+            // Configure SMS notifier
+            this._smsProvider = new SmsProvider({
+                ...this._config.twilio
+            });
+        }
 
         // Assign jobs
         this.jobs = [...jobs];
@@ -193,11 +199,13 @@ export class App {
                 );
                 console.log('---');
 
-                // Send SMS notification
-                await this._smsProvider.send(
-                    jobMeta.phone,
-                    `Found upgrade availability for flight UA ${flight.FlightNumber} on ${jobMeta.itinerary.departureDate}.\nFare class: ${fareClass}\nQuantity: ${quantity}`
-                );
+                if (!this._config.disableSms) {
+                    // Send SMS notification
+                    await this._smsProvider.send(
+                        jobMeta.phone,
+                        `Found upgrade availability for flight UA ${flight.FlightNumber} on ${jobMeta.itinerary.departureDate}.\nFare class: ${fareClass}\nQuantity: ${quantity}`
+                    );
+                }
 
                 // Mark original job as completed using `jobMeta` reference
                 jobMeta.completed = true;

@@ -9,7 +9,7 @@ interface IItinerary {
 }
 
 export interface IJob {
-    phone: string;
+    phone?: string;
     itinerary: IItinerary;
     completed: boolean;
 }

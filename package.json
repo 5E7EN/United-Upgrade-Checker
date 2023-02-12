@@ -9,7 +9,7 @@
     "private": true,
     "scripts": {
         "start": "yarn clean && yarn build && cross-env NODE_ENV=production node ./build",
-        "dev": "cross-env NODE_ENV=development tsnd ./src",
+        "dev": "cross-env NODE_ENV=development tsnd .",
         "build": "tsc -p .",
         "clean": "rimraf build/"
     },
