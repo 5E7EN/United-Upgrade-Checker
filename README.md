@@ -1,5 +1,10 @@
 # United Upgrade Checker
 
+__UPDATE: As noted in [DansDeals's recent article](https://www.dansdeals.com/points-travel/milespoints/travel-tips-workarounds-bring-back-good-old-award-airfare-search-interface/), the legacy award calender for United flights has been killed, which was a key component of this application.  
+Therefore, this program no longer works - though perhaps it can be tweaked to work with the new interface...__
+
+---
+
 Automatically checks for United flight instant upgrade availability on set interval.
 
 ## Usage:
